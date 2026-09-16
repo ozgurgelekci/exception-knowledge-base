@@ -1,0 +1,80 @@
+services:
+  mongodb:
+    image: mongo:7
+    container_name: ekb-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ekb
+      MONGO_INITDB_ROOT_PASSWORD: ekb
+      MONGO_INITDB_DATABASE: exception_kb
+    volumes:
+      - mongo_data:/data/db
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ekb-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ekb
+      POSTGRES_PASSWORD: ekb
+      POSTGRES_DB: exception_kb
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
+
+  redis:
+    image: redis:7-alpine
+    container_name: ekb-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  exception-api:
+    build:
+      context: .
+      dockerfile: deploy/api/Dockerfile
+    container_name: ekb-api
+    depends_on:
+      - mongodb
+      - postgres
+      - redis
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ASPNETCORE_ENVIRONMENT: Development
+      Mongo__ConnectionString: mongodb://ekb:ekb@mongodb:27017/?authSource=admin
+      Mongo__Database: exception_kb
+      Postgres__ConnectionString: Host=postgres;Port=5432;Database=exception_kb;Username=ekb;Password=ekb
+      Redis__ConnectionString: redis:6379
+      OpenAI__ApiKey: ${OPENAI_API_KEY:-}
+      OpenAI__EmbeddingModel: text-embedding-3-small
+      OpenAI__EmbeddingDimensions: 1536
+      OpenAI__ChatModel: gpt-4o-mini
+
+  exception-worker:
+    build:
+      context: .
+      dockerfile: deploy/worker/Dockerfile
+    container_name: ekb-worker
+    depends_on:
+      - mongodb
+      - postgres
+      - redis
+    environment:
+      DOTNET_ENVIRONMENT: Development
+      Mongo__ConnectionString: mongodb://ekb:ekb@mongodb:27017/?authSource=admin
+      Mongo__Database: exception_kb
+      Postgres__ConnectionString: Host=postgres;Port=5432;Database=exception_kb;Username=ekb;Password=ekb
+      Redis__ConnectionString: redis:6379
+      OpenAI__ApiKey: ${OPENAI_API_KEY:-}
+      OpenAI__EmbeddingModel: text-embedding-3-small
+      OpenAI__EmbeddingDimensions: 1536
+
+volumes:
+  mongo_data:
+  pg_data:
+  redis_data:

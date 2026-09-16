@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ExceptionKnowledgeBase.Api/ExceptionKnowledgeBase.Api.csproj" />
+    <Project Path="src/ExceptionKnowledgeBase.Application/ExceptionKnowledgeBase.Application.csproj" />
+    <Project Path="src/ExceptionKnowledgeBase.Contracts/ExceptionKnowledgeBase.Contracts.csproj" />
+    <Project Path="src/ExceptionKnowledgeBase.Domain/ExceptionKnowledgeBase.Domain.csproj" />
+    <Project Path="src/ExceptionKnowledgeBase.Infrastructure/ExceptionKnowledgeBase.Infrastructure.csproj" />
+    <Project Path="src/ExceptionKnowledgeBase.Worker/ExceptionKnowledgeBase.Worker.csproj" />
+  </Folder>
+</Solution>

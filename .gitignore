@@ -1,0 +1,8 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.DS_Store
+.env
+appsettings.Local.json
