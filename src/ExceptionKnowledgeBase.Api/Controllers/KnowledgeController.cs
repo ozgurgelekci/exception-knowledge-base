@@ -3,11 +3,13 @@ using ExceptionKnowledgeBase.Application.Services;
 using ExceptionKnowledgeBase.Contracts.Knowledge;
 using ExceptionKnowledgeBase.Domain.Knowledge;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace ExceptionKnowledgeBase.Api.Controllers;
 
 [ApiController]
 [Route("api/knowledge")]
+[EnableRateLimiting(RateLimitPolicies.Knowledge)]
 public sealed class KnowledgeController : ControllerBase
 {
     private readonly IKnowledgeService _service;
@@ -51,6 +53,37 @@ public sealed class KnowledgeController : ControllerBase
         return ok ? NoContent() : NotFound();
     }
 
+    // Phase 2 (§74): human approval lifecycle.
+    [HttpPost("{id}/verify")]
+    public async Task<ActionResult<KnowledgeEntryResponse>> Verify(
+        string id,
+        [FromBody] VerifyKnowledgeRequest? request,
+        CancellationToken ct)
+    {
+        var tenantId = HttpContext.ResolveTenantId();
+        var entry = await _service.VerifyAsync(tenantId, id, request?.VerifiedBy, ct);
+        return entry is null ? NotFound() : Ok(ToDto(entry));
+    }
+
+    [HttpPost("{id}/archive")]
+    public async Task<ActionResult<KnowledgeEntryResponse>> Archive(
+        string id,
+        [FromBody] ArchiveKnowledgeRequest? request,
+        CancellationToken ct)
+    {
+        var tenantId = HttpContext.ResolveTenantId();
+        var entry = await _service.ArchiveAsync(tenantId, id, request?.ArchivedBy, ct);
+        return entry is null ? NotFound() : Ok(ToDto(entry));
+    }
+
+    [HttpPost("{id}/reset")]
+    public async Task<ActionResult<KnowledgeEntryResponse>> Reset(string id, CancellationToken ct)
+    {
+        var tenantId = HttpContext.ResolveTenantId();
+        var entry = await _service.ResetToDraftAsync(tenantId, id, ct);
+        return entry is null ? NotFound() : Ok(ToDto(entry));
+    }
+
     private static KnowledgeEntryResponse ToDto(KnowledgeEntry entry) => new()
     {
         Id = entry.Id,
@@ -64,6 +97,9 @@ public sealed class KnowledgeController : ControllerBase
         Status = entry.Status,
         Version = entry.Version,
         CreatedAt = entry.CreatedAt,
-        UpdatedAt = entry.UpdatedAt
+        UpdatedAt = entry.UpdatedAt,
+        VerifiedBy = entry.VerifiedBy,
+        VerifiedAt = entry.VerifiedAt,
+        ArchivedAt = entry.ArchivedAt
     };
 }

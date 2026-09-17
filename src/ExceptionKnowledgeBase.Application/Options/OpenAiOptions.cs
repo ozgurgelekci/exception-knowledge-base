@@ -39,4 +39,25 @@ public sealed class AnalysisOptions
     public int KnowledgeVersion { get; set; } = 1;
     public string DefaultTenantId { get; set; } = "default";
     public int VectorCandidatePoolSize { get; set; } = 20;
+
+    // Phase 2 (§16): hybrid search re-ranking.
+    public bool HybridSearchEnabled { get; set; } = true;
+    public double HybridVectorWeight { get; set; } = 0.7;
+    public double HybridKeywordWeight { get; set; } = 0.3;
+    public int HybridRrfK { get; set; } = 60;
+
+    // Phase 2 (§36): cache AI analysis + search responses.
+    public bool AnalysisCacheEnabled { get; set; } = true;
+    public int SearchCacheTtlSeconds { get; set; } = 300;
+    public bool RequireVerifiedKnowledge { get; set; } = false;
+}
+
+// Phase 2 (§65): per-tenant rate limiting.
+public sealed class RateLimitingOptions
+{
+    public bool Enabled { get; set; } = true;
+    public int AnalyzePermitPerMinute { get; set; } = 30;
+    public int SearchPermitPerMinute { get; set; } = 120;
+    public int KnowledgePermitPerMinute { get; set; } = 60;
+    public int QueueLimit { get; set; } = 4;
 }

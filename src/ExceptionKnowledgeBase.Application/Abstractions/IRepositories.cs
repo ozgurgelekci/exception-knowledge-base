@@ -41,6 +41,7 @@ public interface ISolutionRepository
 public interface IAiAnalysisRepository
 {
     Task InsertAsync(AiAnalysis analysis, CancellationToken cancellationToken);
+    Task UpsertAsync(AiAnalysis analysis, CancellationToken cancellationToken);
     Task<AiAnalysis?> GetByIdAsync(string tenantId, string id, CancellationToken cancellationToken);
 }
 

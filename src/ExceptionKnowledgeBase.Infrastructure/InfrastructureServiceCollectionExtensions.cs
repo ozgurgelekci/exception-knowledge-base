@@ -55,6 +55,8 @@ public static class InfrastructureServiceCollectionExtensions
             services.AddSingleton<IConnectionMultiplexer>(_ =>
                 ConnectionMultiplexer.Connect(redis.ConnectionString));
             services.AddSingleton<IEmbeddingCache, RedisEmbeddingCache>();
+            services.AddSingleton<IAnalysisResponseCache, RedisAnalysisResponseCache>();
+            services.AddSingleton<ISearchResponseCache, RedisSearchResponseCache>();
         }
 
         return services;

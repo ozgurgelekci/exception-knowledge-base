@@ -6,9 +6,17 @@ dayanarak geliştiriciye **kaynakları gösterilmiş** AI destekli açıklama ve
 önerisi üreten .NET 8 backend'idir.
 
 Bu depo, `ai_exception_knowledge_base_teknik_analiz.md` dokümanındaki 80 bölümlük
-tasarımın **Section 72** MVP kapsamında implement edilmiş halidir. README, hem
-kullanım kılavuzu hem de kısaltılmış tasarım referansı olarak yazılmıştır — her
-mimari karar analizin ilgili bölüm numarasına referans verir.
+tasarımın **Section 72 MVP + Section 73 Phase 2** kapsamında implement edilmiş
+halidir. README, hem kullanım kılavuzu hem de kısaltılmış tasarım referansı
+olarak yazılmıştır — her mimari karar analizin ilgili bölüm numarasına referans
+verir.
+
+**Phase 2 (§73) eklemeleri:**
+- Hybrid search: pgvector cosine + tsvector, Reciprocal Rank Fusion ile birleşik ranking (§16).
+- Async analiz endpoint'i: `POST /api/exceptions/analyze/async` → 202 + `GET /api/analyses/{id}` polling (§64).
+- Redis analiz + search response cache, `tenant + fingerprint + prompt/knowledge/model version` bileşik anahtar (§36).
+- Knowledge lifecycle endpoint'leri: `POST /api/knowledge/{id}/verify | archive | reset` (§74 draft → verified → archived).
+- Per-tenant rate limiting: analyze / search / knowledge policy'leri (§65).
 
 ---
 

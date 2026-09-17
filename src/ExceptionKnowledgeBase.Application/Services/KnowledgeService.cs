@@ -81,6 +81,55 @@ public sealed class KnowledgeService : IKnowledgeService
     public Task<bool> DeleteAsync(string tenantId, string id, CancellationToken ct)
         => _repo.DeleteAsync(NormalizeTenant(tenantId), id, ct);
 
+    public async Task<KnowledgeEntry?> VerifyAsync(string tenantId, string id, string? verifiedBy, CancellationToken ct)
+    {
+        var existing = await _repo.GetByIdAsync(NormalizeTenant(tenantId), id, ct);
+        if (existing is null) return null;
+        var now = DateTime.UtcNow;
+        existing.Status = "verified";
+        existing.VerifiedBy = verifiedBy;
+        existing.VerifiedAt = now;
+        existing.ArchivedBy = null;
+        existing.ArchivedAt = null;
+        existing.UpdatedAt = now;
+        existing.EmbeddingState = Domain.Knowledge.EmbeddingState.Pending;
+        await _repo.UpsertAsync(existing, ct);
+        await IndexAsync(existing, ct);
+        return existing;
+    }
+
+    public async Task<KnowledgeEntry?> ArchiveAsync(string tenantId, string id, string? archivedBy, CancellationToken ct)
+    {
+        var existing = await _repo.GetByIdAsync(NormalizeTenant(tenantId), id, ct);
+        if (existing is null) return null;
+        var now = DateTime.UtcNow;
+        existing.Status = "archived";
+        existing.ArchivedBy = archivedBy;
+        existing.ArchivedAt = now;
+        existing.UpdatedAt = now;
+        existing.EmbeddingState = Domain.Knowledge.EmbeddingState.Pending;
+        await _repo.UpsertAsync(existing, ct);
+        await IndexAsync(existing, ct);
+        return existing;
+    }
+
+    public async Task<KnowledgeEntry?> ResetToDraftAsync(string tenantId, string id, CancellationToken ct)
+    {
+        var existing = await _repo.GetByIdAsync(NormalizeTenant(tenantId), id, ct);
+        if (existing is null) return null;
+        var now = DateTime.UtcNow;
+        existing.Status = "draft";
+        existing.VerifiedBy = null;
+        existing.VerifiedAt = null;
+        existing.ArchivedBy = null;
+        existing.ArchivedAt = null;
+        existing.UpdatedAt = now;
+        existing.EmbeddingState = Domain.Knowledge.EmbeddingState.Pending;
+        await _repo.UpsertAsync(existing, ct);
+        await IndexAsync(existing, ct);
+        return existing;
+    }
+
     private async Task IndexAsync(KnowledgeEntry entry, CancellationToken ct)
     {
         var content = _inputBuilder.ForKnowledge(entry);

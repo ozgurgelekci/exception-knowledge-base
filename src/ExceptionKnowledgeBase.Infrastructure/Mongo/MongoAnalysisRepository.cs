@@ -12,6 +12,13 @@ public sealed class MongoAnalysisRepository : IAiAnalysisRepository
     public Task InsertAsync(AiAnalysis analysis, CancellationToken ct)
         => _ctx.AiAnalyses.InsertOneAsync(analysis, cancellationToken: ct);
 
+    public Task UpsertAsync(AiAnalysis analysis, CancellationToken ct)
+        => _ctx.AiAnalyses.ReplaceOneAsync(
+            x => x.Id == analysis.Id && x.TenantId == analysis.TenantId,
+            analysis,
+            new ReplaceOptions { IsUpsert = true },
+            ct);
+
     public Task<AiAnalysis?> GetByIdAsync(string tenantId, string id, CancellationToken ct)
         => _ctx.AiAnalyses.Find(x => x.TenantId == tenantId && x.Id == id).FirstOrDefaultAsync(ct)!;
 }

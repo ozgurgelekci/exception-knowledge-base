@@ -24,6 +24,9 @@ public sealed class KnowledgeEntry
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public string? CreatedBy { get; set; }
     public string? VerifiedBy { get; set; }
+    public DateTime? VerifiedAt { get; set; }
+    public string? ArchivedBy { get; set; }
+    public DateTime? ArchivedAt { get; set; }
 
     public int Version { get; set; } = 1;
 

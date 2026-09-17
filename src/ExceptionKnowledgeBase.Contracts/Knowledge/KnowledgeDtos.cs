@@ -28,4 +28,7 @@ public sealed class KnowledgeEntryResponse
     public int Version { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public string? VerifiedBy { get; set; }
+    public DateTime? VerifiedAt { get; set; }
+    public DateTime? ArchivedAt { get; set; }
 }

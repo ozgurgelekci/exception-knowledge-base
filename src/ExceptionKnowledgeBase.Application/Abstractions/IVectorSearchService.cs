@@ -25,7 +25,14 @@ public sealed record VectorSearchQuery(
     string TenantId,
     string? EntityType,
     IReadOnlyDictionary<string, string>? MetadataFilters,
-    int Limit);
+    int Limit,
+    // Phase 2 (§16): hybrid search — when QueryText is set and UseHybrid is true,
+    // the tsvector rank is fused with the vector rank via Reciprocal Rank Fusion.
+    string? QueryText = null,
+    bool UseHybrid = false,
+    double HybridVectorWeight = 0.7,
+    double HybridKeywordWeight = 0.3,
+    int RrfK = 60);
 
 public sealed record VectorSearchHit(
     string EntityId,

@@ -2,6 +2,7 @@ using ExceptionKnowledgeBase.Api.Infrastructure;
 using ExceptionKnowledgeBase.Application.Services;
 using ExceptionKnowledgeBase.Contracts.Exceptions;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace ExceptionKnowledgeBase.Api.Controllers;
 
@@ -14,6 +15,7 @@ public sealed class ExceptionsController : ControllerBase
 
     // Sections 37 + 56: end-to-end analyze
     [HttpPost("analyze")]
+    [EnableRateLimiting(RateLimitPolicies.Analyze)]
     public async Task<ActionResult<AnalyzeExceptionResponse>> Analyze(
         [FromBody] ReportExceptionRequest request,
         CancellationToken ct)
@@ -26,8 +28,26 @@ public sealed class ExceptionsController : ControllerBase
         return Ok(response);
     }
 
+    // Section 64: async analyze — enqueue and return 202 + Location.
+    [HttpPost("analyze/async")]
+    [EnableRateLimiting(RateLimitPolicies.Analyze)]
+    public async Task<IActionResult> AnalyzeAsyncEnqueue(
+        [FromBody] ReportExceptionRequest request,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Message))
+            return BadRequest(new ProblemDetails { Title = "message is required" });
+
+        var tenantId = HttpContext.ResolveTenantId();
+        var analysisId = await _service.EnqueueAsync(tenantId, request, ct);
+        var location = $"/api/analyses/{analysisId}";
+        Response.Headers.Location = location;
+        return Accepted(location, new { analysisId, status = "pending" });
+    }
+
     // Section 38: semantic search
     [HttpPost("search")]
+    [EnableRateLimiting(RateLimitPolicies.Search)]
     public async Task<ActionResult<SearchExceptionsResponse>> Search(
         [FromBody] SearchExceptionsRequest request,
         CancellationToken ct)
