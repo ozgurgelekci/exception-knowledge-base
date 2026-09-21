@@ -23,6 +23,7 @@ public static class ApplicationServiceCollectionExtensions
         services.AddSingleton<IEmbeddingInputBuilder, EmbeddingInputBuilder>();
         services.AddSingleton<IPromptBuilder, PromptBuilder>();
         services.AddSingleton<IConfidenceCalculator, ConfidenceCalculator>();
+        services.AddSingleton<IRootCauseClassifier, RootCauseClassifier>();
 
         services.AddScoped<IExceptionAnalysisService, ExceptionAnalysisService>();
         services.AddScoped<IKnowledgeService, KnowledgeService>();

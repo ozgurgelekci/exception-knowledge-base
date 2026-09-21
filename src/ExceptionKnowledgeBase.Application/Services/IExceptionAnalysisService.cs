@@ -27,4 +27,10 @@ public interface IExceptionAnalysisService
         string tenantId,
         string id,
         CancellationToken cancellationToken);
+
+    // Phase 4 (§75): fingerprint × day counts for the last N days.
+    Task<TrendsResponse> GetTrendsAsync(
+        string tenantId,
+        int days,
+        CancellationToken cancellationToken);
 }

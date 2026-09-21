@@ -17,7 +17,9 @@ public interface IPromptBuilder
 public sealed record KnowledgeCandidate(
     KnowledgeEntry Entry,
     double Similarity,
-    double? SolutionSuccessRate);
+    double? SolutionSuccessRate,
+    // Phase 3 (§74): final rank score after success-rate boost — used by the caller to sort.
+    double RankScore);
 
 public sealed record PromptPayload(
     string SystemPrompt,

@@ -64,11 +64,12 @@ ON CONFLICT (entity_type, entity_id, tenant_id, model, model_version) DO UPDATE
 
     private async Task<IReadOnlyList<VectorSearchHit>> VectorOnlySearchAsync(VectorSearchQuery query, CancellationToken ct)
     {
+        var tenants = BuildTenantList(query);
         var sb = new StringBuilder("""
 SELECT entity_id, entity_type, tenant_id, content,
        embedding <=> @vector AS distance
 FROM embeddings
-WHERE tenant_id = @tenant_id
+WHERE tenant_id = ANY(@tenant_ids)
 """);
 
         if (!string.IsNullOrWhiteSpace(query.EntityType))
@@ -83,7 +84,7 @@ WHERE tenant_id = @tenant_id
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(sb.ToString(), conn);
         cmd.Parameters.AddWithValue("vector", new Vector(query.Vector));
-        cmd.Parameters.AddWithValue("tenant_id", query.TenantId);
+        cmd.Parameters.AddWithValue("tenant_ids", tenants);
         if (!string.IsNullOrWhiteSpace(query.EntityType))
             cmd.Parameters.AddWithValue("entity_type", query.EntityType);
         if (query.MetadataFilters is { Count: > 0 })
@@ -115,6 +116,7 @@ WHERE tenant_id = @tenant_id
     private async Task<IReadOnlyList<VectorSearchHit>> HybridSearchAsync(VectorSearchQuery query, CancellationToken ct)
     {
         var pool = Math.Max(query.Limit * 4, 20);
+        var tenants = BuildTenantList(query);
 
         var entityFilter = string.IsNullOrWhiteSpace(query.EntityType)
             ? string.Empty
@@ -129,7 +131,7 @@ WITH vec AS (
            embedding <=> @vector AS distance,
            ROW_NUMBER() OVER (ORDER BY embedding <=> @vector) AS rk
     FROM embeddings
-    WHERE tenant_id = @tenant_id{entityFilter}{metaFilter}
+    WHERE tenant_id = ANY(@tenant_ids){entityFilter}{metaFilter}
     ORDER BY embedding <=> @vector
     LIMIT @pool
 ),
@@ -138,7 +140,7 @@ bm AS (
            ts_rank(content_tsv, plainto_tsquery('simple', @q)) AS score,
            ROW_NUMBER() OVER (ORDER BY ts_rank(content_tsv, plainto_tsquery('simple', @q)) DESC) AS rk
     FROM embeddings
-    WHERE tenant_id = @tenant_id{entityFilter}{metaFilter}
+    WHERE tenant_id = ANY(@tenant_ids){entityFilter}{metaFilter}
       AND content_tsv @@ plainto_tsquery('simple', @q)
     ORDER BY score DESC
     LIMIT @pool
@@ -163,7 +165,7 @@ LIMIT @limit;
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("vector", new Vector(query.Vector));
-        cmd.Parameters.AddWithValue("tenant_id", query.TenantId);
+        cmd.Parameters.AddWithValue("tenant_ids", tenants);
         cmd.Parameters.AddWithValue("q", query.QueryText ?? string.Empty);
         cmd.Parameters.AddWithValue("k", query.RrfK);
         cmd.Parameters.AddWithValue("wv", query.HybridVectorWeight);
@@ -192,5 +194,17 @@ LIMIT @limit;
 
         _logger.LogDebug("hybrid search returned {Count} hits (pool={Pool})", hits.Count, pool);
         return hits;
+    }
+
+    // Phase 3 (§74): pass tenant + extra tenants as string[] to ANY() — single query, single index scan.
+    private static string[] BuildTenantList(VectorSearchQuery query)
+    {
+        if (query.AdditionalTenantIds is null || query.AdditionalTenantIds.Count == 0)
+            return new[] { query.TenantId };
+
+        var set = new HashSet<string>(StringComparer.Ordinal) { query.TenantId };
+        foreach (var t in query.AdditionalTenantIds)
+            if (!string.IsNullOrWhiteSpace(t)) set.Add(t);
+        return set.ToArray();
     }
 }

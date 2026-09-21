@@ -31,6 +31,9 @@ public sealed class ExceptionDefinition
     public string? Database { get; set; }
     public string? Module { get; set; }
 
+    // Phase 4 (§75): coarse taxonomy bucket (timeout | auth | database | network | ...).
+    public string? RootCauseCategory { get; set; }
+
     public long OccurrenceCount { get; set; }
     public DateTime FirstSeenAt { get; set; } = DateTime.UtcNow;
     public DateTime LastSeenAt { get; set; } = DateTime.UtcNow;

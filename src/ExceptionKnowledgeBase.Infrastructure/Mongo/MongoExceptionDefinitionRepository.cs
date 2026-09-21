@@ -1,5 +1,6 @@
 using ExceptionKnowledgeBase.Application.Abstractions;
 using ExceptionKnowledgeBase.Domain.Exceptions;
+using MongoDB.Bson;
 using MongoDB.Driver;
 
 namespace ExceptionKnowledgeBase.Infrastructure.Mongo;
@@ -82,4 +83,52 @@ public sealed class MongoExceptionOccurrenceRepository : IExceptionOccurrenceRep
 
     public Task InsertAsync(ExceptionOccurrence occurrence, CancellationToken ct)
         => _ctx.ExceptionOccurrences.InsertOneAsync(occurrence, cancellationToken: ct);
+
+    // Phase 4 (§75): daily grouping via aggregation pipeline. Fingerprint index makes
+    // this cheap even without a dedicated summary collection.
+    public async Task<IReadOnlyList<FingerprintDailyCount>> GetTrendsAsync(string tenantId, DateTime sinceUtc, CancellationToken ct)
+    {
+        // MongoContext applies CamelCaseElementNameConvention → field names are camelCase.
+        var pipeline = new[]
+        {
+            new BsonDocument("$match", new BsonDocument
+            {
+                { "tenantId", tenantId },
+                { "occurredAt", new BsonDocument("$gte", sinceUtc) }
+            }),
+            new BsonDocument("$group", new BsonDocument
+            {
+                { "_id", new BsonDocument
+                    {
+                        { "fingerprint", "$fingerprint" },
+                        { "day", new BsonDocument("$dateTrunc", new BsonDocument
+                            {
+                                { "date", "$occurredAt" },
+                                { "unit", "day" }
+                            })
+                        }
+                    }
+                },
+                { "count", new BsonDocument("$sum", 1) }
+            }),
+            new BsonDocument("$sort", new BsonDocument
+            {
+                { "_id.day", 1 },
+                { "count", -1 }
+            })
+        };
+
+        var cursor = await _ctx.ExceptionOccurrences.AggregateAsync<BsonDocument>(pipeline, cancellationToken: ct);
+        var docs = await cursor.ToListAsync(ct);
+        var results = new List<FingerprintDailyCount>(docs.Count);
+        foreach (var doc in docs)
+        {
+            var key = doc["_id"].AsBsonDocument;
+            results.Add(new FingerprintDailyCount(
+                Fingerprint: key["fingerprint"].AsString,
+                Day: key["day"].ToUniversalTime(),
+                Count: doc["count"].ToInt64()));
+        }
+        return results;
+    }
 }

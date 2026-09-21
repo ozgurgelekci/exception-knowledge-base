@@ -12,4 +12,5 @@ public interface IKnowledgeService
     Task<KnowledgeEntry?> VerifyAsync(string tenantId, string id, string? verifiedBy, CancellationToken cancellationToken);
     Task<KnowledgeEntry?> ArchiveAsync(string tenantId, string id, string? archivedBy, CancellationToken cancellationToken);
     Task<KnowledgeEntry?> ResetToDraftAsync(string tenantId, string id, CancellationToken cancellationToken);
+    Task<IReadOnlyList<KnowledgeEntry>> ListByStatusAsync(string tenantId, string status, int limit, CancellationToken cancellationToken);
 }

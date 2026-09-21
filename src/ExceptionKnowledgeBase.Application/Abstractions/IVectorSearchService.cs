@@ -32,7 +32,9 @@ public sealed record VectorSearchQuery(
     bool UseHybrid = false,
     double HybridVectorWeight = 0.7,
     double HybridKeywordWeight = 0.3,
-    int RrfK = 60);
+    int RrfK = 60,
+    // Phase 3 (§74): merge caller tenant with additional tenants (e.g. "global") in the same query.
+    IReadOnlyList<string>? AdditionalTenantIds = null);
 
 public sealed record VectorSearchHit(
     string EntityId,

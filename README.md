@@ -18,6 +18,15 @@ verir.
 - Knowledge lifecycle endpoint'leri: `POST /api/knowledge/{id}/verify | archive | reset` (§74 draft → verified → archived).
 - Per-tenant rate limiting: analyze / search / knowledge policy'leri (§65).
 
+**Phase 3 (§74) eklemeleri:**
+- Success-rate re-ranking: knowledge adayları `similarity + boost × successRate` skoru ile yeniden sıralanır.
+- Global tenant merge: `Analysis:GlobalKnowledgeEnabled` açıkken tenant + `global` tenant tek sorguda birleşir.
+- Reviewer queue: `GET /api/knowledge?status=draft` — insan onayı bekleyen kartlar.
+
+**Phase 4 (§75) eklemeleri:**
+- Root cause taxonomy: her definition/analiz için `timeout | auth | database | network | ...` kategorisi.
+- Trend endpoint'i: `GET /api/exceptions/trends?days=14` — fingerprint × gün occurrence sayıları.
+
 ---
 
 ## İçindekiler

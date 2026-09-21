@@ -19,7 +19,12 @@ public interface IExceptionDefinitionRepository
 public interface IExceptionOccurrenceRepository
 {
     Task InsertAsync(ExceptionOccurrence occurrence, CancellationToken cancellationToken);
+
+    // Phase 4 (§75): counts by fingerprint per UTC day for a rolling window.
+    Task<IReadOnlyList<FingerprintDailyCount>> GetTrendsAsync(string tenantId, DateTime sinceUtc, CancellationToken cancellationToken);
 }
+
+public sealed record FingerprintDailyCount(string Fingerprint, DateTime Day, long Count);
 
 public interface IKnowledgeEntryRepository
 {
@@ -29,6 +34,9 @@ public interface IKnowledgeEntryRepository
     Task<bool> DeleteAsync(string tenantId, string id, CancellationToken cancellationToken);
     Task<IReadOnlyList<KnowledgeEntry>> GetPendingEmbeddingsAsync(int limit, CancellationToken cancellationToken);
     Task MarkEmbeddedAsync(string id, string model, string modelVersion, CancellationToken cancellationToken);
+
+    // Phase 3 (§74): reviewer queue — draft entries awaiting verification, oldest first.
+    Task<IReadOnlyList<KnowledgeEntry>> GetByStatusAsync(string tenantId, string status, int limit, CancellationToken cancellationToken);
 }
 
 public interface ISolutionRepository

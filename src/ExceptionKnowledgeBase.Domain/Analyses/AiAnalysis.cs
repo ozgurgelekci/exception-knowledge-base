@@ -23,6 +23,9 @@ public sealed class AiAnalysis
     public double RootCauseConfidence { get; set; }
     public double ApplicationConfidence { get; set; }
 
+    // Phase 4 (§75): coarse category for trend analytics.
+    public string? RootCauseCategory { get; set; }
+
     public List<string> RecommendedChecks { get; set; } = new();
     public List<string> RecommendedSolutions { get; set; } = new();
 

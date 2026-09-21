@@ -58,4 +58,13 @@ public sealed class ExceptionsController : ControllerBase
         var tenantId = HttpContext.ResolveTenantId();
         return Ok(await _service.SearchAsync(tenantId, request, ct));
     }
+
+    // Phase 4 (§75): fingerprint × day counts for a rolling window.
+    [HttpGet("trends")]
+    [EnableRateLimiting(RateLimitPolicies.Search)]
+    public async Task<ActionResult<TrendsResponse>> Trends([FromQuery] int days = 0, CancellationToken ct = default)
+    {
+        var tenantId = HttpContext.ResolveTenantId();
+        return Ok(await _service.GetTrendsAsync(tenantId, days, ct));
+    }
 }

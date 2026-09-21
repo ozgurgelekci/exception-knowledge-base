@@ -10,6 +10,9 @@ public sealed class AnalyzeExceptionResponse
     public RootCauseDto RootCause { get; set; } = new();
     public double Confidence { get; set; }
 
+    // Phase 4 (§75): coarse taxonomy category (timeout | auth | database | network | ...).
+    public string? RootCauseCategory { get; set; }
+
     public List<EvidenceDto> Evidence { get; set; } = new();
     public List<string> Sources { get; set; } = new();
 

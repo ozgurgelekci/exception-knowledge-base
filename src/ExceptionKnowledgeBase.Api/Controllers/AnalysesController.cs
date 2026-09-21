@@ -49,6 +49,7 @@ public sealed class AnalysesController : ControllerBase
         Summary = a.Summary,
         RootCause = new RootCauseDto { Text = a.RootCause, Confidence = a.RootCauseConfidence },
         Confidence = a.ApplicationConfidence,
+        RootCauseCategory = a.RootCauseCategory,
         Evidence = a.Evidence.Select(e => new EvidenceDto
         {
             EntityType = e.EntityType,

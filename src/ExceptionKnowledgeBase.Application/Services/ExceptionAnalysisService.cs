@@ -11,6 +11,7 @@ using ExceptionKnowledgeBase.Contracts.Exceptions;
 using ExceptionKnowledgeBase.Domain.Analyses;
 using ExceptionKnowledgeBase.Domain.Common;
 using ExceptionKnowledgeBase.Domain.Exceptions;
+using KnowledgeEntry = ExceptionKnowledgeBase.Domain.Knowledge.KnowledgeEntry;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -35,6 +36,7 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
     private readonly IPromptBuilder _promptBuilder;
     private readonly IChatCompletionService _chat;
     private readonly IConfidenceCalculator _confidence;
+    private readonly IRootCauseClassifier _rootCauseClassifier;
     private readonly IAnalysisResponseCache? _analysisCache;
     private readonly ISearchResponseCache? _searchCache;
     private readonly IAnalysisJobQueue? _jobQueue;
@@ -57,6 +59,7 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
         IPromptBuilder promptBuilder,
         IChatCompletionService chat,
         IConfidenceCalculator confidence,
+        IRootCauseClassifier rootCauseClassifier,
         IOptions<OpenAiOptions> openAi,
         IOptions<AnalysisOptions> analysis,
         ILogger<ExceptionAnalysisService> logger,
@@ -78,6 +81,7 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
         _promptBuilder = promptBuilder;
         _chat = chat;
         _confidence = confidence;
+        _rootCauseClassifier = rootCauseClassifier;
         _analysisCache = analysisCache;
         _searchCache = searchCache;
         _jobQueue = jobQueue;
@@ -136,6 +140,31 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
     public Task<AiAnalysis?> GetAnalysisAsync(string tenantId, string id, CancellationToken ct)
         => _analyses.GetByIdAsync(NormalizeTenant(tenantId), id, ct);
 
+    public async Task<TrendsResponse> GetTrendsAsync(string tenantId, int days, CancellationToken ct)
+    {
+        tenantId = NormalizeTenant(tenantId);
+        var window = Math.Clamp(days <= 0 ? _analysis.TrendDefaultDays : days, 1, _analysis.TrendMaxDays);
+        var since = DateTime.UtcNow.Date.AddDays(-(window - 1));
+
+        var rows = await _occurrences.GetTrendsAsync(tenantId, since, ct);
+
+        var byFp = rows
+            .GroupBy(r => r.Fingerprint, StringComparer.Ordinal)
+            .Select(g => new FingerprintTrendDto
+            {
+                Fingerprint = g.Key,
+                Total = g.Sum(x => x.Count),
+                Series = g
+                    .OrderBy(x => x.Day)
+                    .Select(x => new TrendPointDto { Day = x.Day, Count = x.Count })
+                    .ToList()
+            })
+            .OrderByDescending(x => x.Total)
+            .ToList();
+
+        return new TrendsResponse { Days = window, SinceUtc = since, Fingerprints = byFp };
+    }
+
     private async Task<AnalyzeExceptionResponse> RunAnalysisAsync(
         string? analysisId,
         string tenantId,
@@ -174,6 +203,7 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
                          ?? BuildDefinition(tenantId, request, redactedMessage, normalized, fingerprint);
 
         MergeIntoDefinition(definition, request);
+        definition.RootCauseCategory ??= _rootCauseClassifier.Classify(definition.ExceptionType, definition.NormalizedMessage);
         definition.LastSeenAt = DateTime.UtcNow;
         definition.OccurrenceCount += 1;
         await _definitions.UpsertAsync(definition, ct);
@@ -217,16 +247,20 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
             UseHybrid: _analysis.HybridSearchEnabled,
             HybridVectorWeight: _analysis.HybridVectorWeight,
             HybridKeywordWeight: _analysis.HybridKeywordWeight,
-            RrfK: _analysis.HybridRrfK), ct);
+            RrfK: _analysis.HybridRrfK,
+            AdditionalTenantIds: BuildAdditionalTenants(tenantId)), ct);
         searchSw.Stop();
 
-        // SQL already returns rows best-first (RRF for hybrid, cosine for vector-only).
+        // Filter on semantic similarity first; the success-rate boost (§74) is applied
+        // after gating so weak matches can't ride in on a good historical solution.
         var filtered = hits
             .Where(h => h.Similarity >= _analysis.MinSimilarity)
-            .Take(_analysis.TopK)
             .ToList();
 
-        var candidates = await BuildCandidatesAsync(tenantId, filtered, ct);
+        var candidates = (await BuildCandidatesAsync(tenantId, filtered, ct))
+            .OrderByDescending(c => c.RankScore)
+            .Take(_analysis.TopK)
+            .ToList();
 
         var prompt = _promptBuilder.Build(definition, redactedMessage, candidates, _openAi.PromptVersion);
         var llmSw = Stopwatch.StartNew();
@@ -253,6 +287,7 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
             RootCause = parsed?.RootCause ?? string.Empty,
             RootCauseConfidence = parsed?.RootCauseConfidence ?? 0,
             ApplicationConfidence = appConfidence,
+            RootCauseCategory = definition.RootCauseCategory,
             RecommendedChecks = parsed?.RecommendedChecks ?? new(),
             RecommendedSolutions = parsed?.RecommendedSolutions ?? new(),
             KnownStatement = parsed?.Known,
@@ -300,6 +335,7 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
         Summary = a.Summary,
         RootCause = new RootCauseDto { Text = a.RootCause, Confidence = a.RootCauseConfidence },
         Confidence = a.ApplicationConfidence,
+        RootCauseCategory = a.RootCauseCategory,
         Evidence = a.Evidence.Select(e => new EvidenceDto
         {
             EntityType = e.EntityType,
@@ -414,18 +450,42 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
     {
         if (hits.Count == 0) return Array.Empty<KnowledgeCandidate>();
 
-        var ids = hits.Select(h => h.EntityId).ToList();
-        var entries = await _knowledge.GetByIdsAsync(tenantId, ids, ct);
-        var byId = entries.ToDictionary(e => e.Id, StringComparer.Ordinal);
+        // Hits may span multiple tenants (§74 global merge). Fetch per hit's tenant.
+        var byId = new Dictionary<string, KnowledgeEntry>(StringComparer.Ordinal);
+        foreach (var group in hits.GroupBy(h => h.TenantId, StringComparer.Ordinal))
+        {
+            var entries = await _knowledge.GetByIdsAsync(
+                group.Key,
+                group.Select(g => g.EntityId),
+                ct);
+            foreach (var e in entries) byId[e.Id] = e;
+        }
 
         var candidates = new List<KnowledgeCandidate>();
         foreach (var hit in hits)
         {
             if (!byId.TryGetValue(hit.EntityId, out var entry)) continue;
-            var top = await _solutions.GetTopSolutionForKnowledgeAsync(tenantId, entry.Id, ct);
-            candidates.Add(new KnowledgeCandidate(entry, hit.Similarity, top?.SuccessRate));
+            var top = await _solutions.GetTopSolutionForKnowledgeAsync(hit.TenantId, entry.Id, ct);
+            var rank = ComputeRankScore(hit.Similarity, top?.SuccessRate);
+            candidates.Add(new KnowledgeCandidate(entry, hit.Similarity, top?.SuccessRate, rank));
         }
         return candidates;
+    }
+
+    private double ComputeRankScore(double similarity, double? successRate)
+    {
+        if (!_analysis.SuccessRateRerankEnabled || successRate is null) return similarity;
+        // §74: linear blend keeps ranking interpretable. Boost tops out at SuccessRateBoost when
+        // every historical application succeeded, and vanishes when we have no data.
+        return similarity + _analysis.SuccessRateBoost * successRate.Value;
+    }
+
+    private IReadOnlyList<string>? BuildAdditionalTenants(string tenantId)
+    {
+        if (!_analysis.GlobalKnowledgeEnabled) return null;
+        if (string.IsNullOrWhiteSpace(_analysis.GlobalTenantId)) return null;
+        if (string.Equals(tenantId, _analysis.GlobalTenantId, StringComparison.Ordinal)) return null;
+        return new[] { _analysis.GlobalTenantId };
     }
 
     private static ExceptionDefinition BuildDefinition(

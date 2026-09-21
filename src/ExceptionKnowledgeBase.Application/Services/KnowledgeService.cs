@@ -130,6 +130,12 @@ public sealed class KnowledgeService : IKnowledgeService
         return existing;
     }
 
+    public Task<IReadOnlyList<KnowledgeEntry>> ListByStatusAsync(string tenantId, string status, int limit, CancellationToken ct)
+    {
+        var clamped = Math.Clamp(limit, 1, 200);
+        return _repo.GetByStatusAsync(NormalizeTenant(tenantId), status, clamped, ct);
+    }
+
     private async Task IndexAsync(KnowledgeEntry entry, CancellationToken ct)
     {
         var content = _inputBuilder.ForKnowledge(entry);

@@ -58,6 +58,16 @@ public sealed class MongoKnowledgeRepository : IKnowledgeEntryRepository
             .Set(x => x.EmbeddedAt, DateTime.UtcNow);
         return _ctx.KnowledgeEntries.UpdateOneAsync(x => x.Id == id, update, cancellationToken: ct);
     }
+
+    public async Task<IReadOnlyList<KnowledgeEntry>> GetByStatusAsync(string tenantId, string status, int limit, CancellationToken ct)
+    {
+        var cursor = await _ctx.KnowledgeEntries
+            .Find(x => x.TenantId == tenantId && x.Status == status)
+            .SortBy(x => x.CreatedAt)
+            .Limit(limit)
+            .ToListAsync(ct);
+        return cursor;
+    }
 }
 
 public sealed class MongoSolutionRepository : ISolutionRepository

@@ -84,6 +84,18 @@ public sealed class KnowledgeController : ControllerBase
         return entry is null ? NotFound() : Ok(ToDto(entry));
     }
 
+    // Phase 3 (§74): reviewer queue — status defaults to "draft".
+    [HttpGet]
+    public async Task<ActionResult<IReadOnlyList<KnowledgeEntryResponse>>> List(
+        [FromQuery] string status = "draft",
+        [FromQuery] int limit = 50,
+        CancellationToken ct = default)
+    {
+        var tenantId = HttpContext.ResolveTenantId();
+        var entries = await _service.ListByStatusAsync(tenantId, status, limit, ct);
+        return Ok(entries.Select(ToDto).ToList());
+    }
+
     private static KnowledgeEntryResponse ToDto(KnowledgeEntry entry) => new()
     {
         Id = entry.Id,

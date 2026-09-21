@@ -50,6 +50,20 @@ public sealed class AnalysisOptions
     public bool AnalysisCacheEnabled { get; set; } = true;
     public int SearchCacheTtlSeconds { get; set; } = 300;
     public bool RequireVerifiedKnowledge { get; set; } = false;
+
+    // Phase 3 (§74): re-rank knowledge candidates by historical solution success rate.
+    // Final rank score = similarity + SuccessRateBoost * successRate (0..1).
+    // Only kicks in after MinSimilarity filter; keeps semantic gating intact.
+    public bool SuccessRateRerankEnabled { get; set; } = true;
+    public double SuccessRateBoost { get; set; } = 0.15;
+
+    // Phase 3 (§74): merge tenant knowledge with an org-wide "global" tenant.
+    public bool GlobalKnowledgeEnabled { get; set; } = false;
+    public string GlobalTenantId { get; set; } = "global";
+
+    // Phase 4 (§75): fingerprint trend endpoint horizon.
+    public int TrendDefaultDays { get; set; } = 14;
+    public int TrendMaxDays { get; set; } = 90;
 }
 
 // Phase 2 (§65): per-tenant rate limiting.
