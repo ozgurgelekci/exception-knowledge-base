@@ -1,4 +1,5 @@
 using ExceptionKnowledgeBase.Api.Infrastructure;
+using ExceptionKnowledgeBase.Application.Analysis;
 using ExceptionKnowledgeBase.Application.Services;
 using ExceptionKnowledgeBase.Contracts.Exceptions;
 using Microsoft.AspNetCore.Mvc;
@@ -11,7 +12,12 @@ namespace ExceptionKnowledgeBase.Api.Controllers;
 public sealed class ExceptionsController : ControllerBase
 {
     private readonly IExceptionAnalysisService _service;
-    public ExceptionsController(IExceptionAnalysisService service) => _service = service;
+    private readonly IAnomalyAlertSink _alerts;
+    public ExceptionsController(IExceptionAnalysisService service, IAnomalyAlertSink alerts)
+    {
+        _service = service;
+        _alerts = alerts;
+    }
 
     // Sections 37 + 56: end-to-end analyze
     [HttpPost("analyze")]
@@ -66,5 +72,14 @@ public sealed class ExceptionsController : ControllerBase
     {
         var tenantId = HttpContext.ResolveTenantId();
         return Ok(await _service.GetTrendsAsync(tenantId, days, ct));
+    }
+
+    // Phase 4 (§75): recent anomaly alerts detected in-process.
+    [HttpGet("alerts")]
+    [EnableRateLimiting(RateLimitPolicies.Search)]
+    public ActionResult<IReadOnlyList<AnomalyAlert>> Alerts([FromQuery] int limit = 50)
+    {
+        var tenantId = HttpContext.ResolveTenantId();
+        return Ok(_alerts.RecentAlerts(tenantId, Math.Clamp(limit, 1, 500)));
     }
 }

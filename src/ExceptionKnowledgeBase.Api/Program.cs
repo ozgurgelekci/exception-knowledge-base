@@ -3,9 +3,13 @@ using ExceptionKnowledgeBase.Api.Infrastructure;
 using ExceptionKnowledgeBase.Application;
 using ExceptionKnowledgeBase.Application.Abstractions;
 using ExceptionKnowledgeBase.Application.Options;
+using ExceptionKnowledgeBase.Application.Telemetry;
 using ExceptionKnowledgeBase.Infrastructure;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,6 +27,33 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddProblemDetails();
+
+// §78: OpenTelemetry — subscribes to AiMetrics + AspNetCore/HttpClient sources.
+// OTLP endpoint is opt-in via OTEL_EXPORTER_OTLP_ENDPOINT; without it the SDK collects
+// but doesn't ship anywhere, so leaving the env var unset is a safe no-op.
+var otlpEndpoint = builder.Configuration["OpenTelemetry:OtlpEndpoint"]
+                   ?? Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+var serviceName = builder.Configuration["OpenTelemetry:ServiceName"] ?? "exception-knowledge-base";
+
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(r => r.AddService(serviceName))
+    .WithTracing(t =>
+    {
+        t.AddAspNetCoreInstrumentation();
+        t.AddHttpClientInstrumentation();
+        t.AddSource("ExceptionKnowledgeBase");
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+            t.AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint));
+    })
+    .WithMetrics(m =>
+    {
+        m.AddMeter(AiMetrics.MeterName);
+        m.AddAspNetCoreInstrumentation();
+        m.AddHttpClientInstrumentation();
+        m.AddRuntimeInstrumentation();
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+            m.AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint));
+    });
 
 // Section 65: per-tenant fixed-window rate limits per policy.
 var rateLimits = builder.Configuration.GetSection("RateLimiting").Get<RateLimitingOptions>() ?? new RateLimitingOptions();

@@ -85,6 +85,8 @@ Rules:
                     sb.Append("Solution Steps: ").AppendLine(string.Join(" | ", c.Entry.Solution));
                 if (c.Entry.Verification.Count > 0)
                     sb.Append("Verification: ").AppendLine(string.Join(" | ", c.Entry.Verification));
+                if (!string.IsNullOrWhiteSpace(c.Entry.Runbook))
+                    sb.Append("Runbook: ").AppendLine(c.Entry.Runbook.Replace('\n', ' ').Replace('\r', ' '));
                 sb.AppendLine();
             }
         }

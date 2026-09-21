@@ -7,6 +7,7 @@ using ExceptionKnowledgeBase.Application.Analysis;
 using ExceptionKnowledgeBase.Application.Normalization;
 using ExceptionKnowledgeBase.Application.Options;
 using ExceptionKnowledgeBase.Application.Security;
+using ExceptionKnowledgeBase.Application.Telemetry;
 using ExceptionKnowledgeBase.Contracts.Exceptions;
 using ExceptionKnowledgeBase.Domain.Analyses;
 using ExceptionKnowledgeBase.Domain.Common;
@@ -37,6 +38,9 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
     private readonly IChatCompletionService _chat;
     private readonly IConfidenceCalculator _confidence;
     private readonly IRootCauseClassifier _rootCauseClassifier;
+    private readonly IReRanker _reRanker;
+    private readonly IAnomalyDetector _anomalyDetector;
+    private readonly AiMetrics _metrics;
     private readonly IAnalysisResponseCache? _analysisCache;
     private readonly ISearchResponseCache? _searchCache;
     private readonly IAnalysisJobQueue? _jobQueue;
@@ -60,6 +64,9 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
         IChatCompletionService chat,
         IConfidenceCalculator confidence,
         IRootCauseClassifier rootCauseClassifier,
+        IReRanker reRanker,
+        IAnomalyDetector anomalyDetector,
+        AiMetrics metrics,
         IOptions<OpenAiOptions> openAi,
         IOptions<AnalysisOptions> analysis,
         ILogger<ExceptionAnalysisService> logger,
@@ -82,6 +89,9 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
         _chat = chat;
         _confidence = confidence;
         _rootCauseClassifier = rootCauseClassifier;
+        _reRanker = reRanker;
+        _anomalyDetector = anomalyDetector;
+        _metrics = metrics;
         _analysisCache = analysisCache;
         _searchCache = searchCache;
         _jobQueue = jobQueue;
@@ -210,12 +220,14 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
 
         var occurrence = BuildOccurrence(tenantId, request, redactedMessage, redactedStack, definition);
         await _occurrences.InsertAsync(occurrence, ct);
+        _anomalyDetector.RecordOccurrence(tenantId, fingerprint, occurrence.OccurredAt);
 
         var embedSw = Stopwatch.StartNew();
         var embeddingContent = _embeddingInput.ForException(definition);
         definition.EmbeddingContent = embeddingContent;
         var embedding = await _embedding.EmbedAsync(embeddingContent, ct);
         embedSw.Stop();
+        _metrics.RecordEmbedding(tenantId, embedding.Model, embedSw.ElapsedMilliseconds);
 
         await _vectorSearch.UpsertAsync(new EmbeddingUpsert(
             EntityId: definition.Id,
@@ -257,8 +269,9 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
             .Where(h => h.Similarity >= _analysis.MinSimilarity)
             .ToList();
 
-        var candidates = (await BuildCandidatesAsync(tenantId, filtered, ct))
-            .OrderByDescending(c => c.RankScore)
+        var candidatesRaw = await BuildCandidatesAsync(tenantId, filtered, ct);
+        var candidates = _reRanker
+            .ReRank(embeddingContent, candidatesRaw)
             .Take(_analysis.TopK)
             .ToList();
 
@@ -266,6 +279,7 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
         var llmSw = Stopwatch.StartNew();
         var completion = await _chat.CompleteAsync(prompt.SystemPrompt, prompt.UserPrompt, ct);
         llmSw.Stop();
+        _metrics.RecordTokens(tenantId, completion.Model, completion.PromptTokens, completion.CompletionTokens);
 
         var parsed = TryParseLlmResponse(completion.Content);
         var similarities = candidates.Select(c => c.Similarity).ToList();
@@ -316,6 +330,8 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
 
         // Upsert so async path can overwrite the pending record with the ready one.
         await _analyses.UpsertAsync(analysis, ct);
+
+        _metrics.RecordAnalysis(tenantId, completion.Model, llmSw.ElapsedMilliseconds, totalSw.ElapsedMilliseconds, analysis.Status);
 
         var response = ToResponse(analysis);
 
@@ -406,7 +422,10 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
             }
         }
 
+        var searchEmbedSw = Stopwatch.StartNew();
         var embedding = await _embedding.EmbedAsync(normalized, ct);
+        searchEmbedSw.Stop();
+        _metrics.RecordEmbedding(tenantId, embedding.Model, searchEmbedSw.ElapsedMilliseconds);
 
         var hits = await _vectorSearch.SearchAsync(new VectorSearchQuery(
             Vector: embedding.Vector,

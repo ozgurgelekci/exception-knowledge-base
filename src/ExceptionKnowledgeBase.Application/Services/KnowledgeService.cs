@@ -44,7 +44,8 @@ public sealed class KnowledgeService : IKnowledgeService
             Verification = request.Verification,
             Tags = request.Tags,
             Status = request.Status,
-            CreatedBy = request.CreatedBy
+            CreatedBy = request.CreatedBy,
+            Runbook = request.Runbook
         };
 
         await _repo.UpsertAsync(entry, ct);
@@ -69,6 +70,7 @@ public sealed class KnowledgeService : IKnowledgeService
         existing.Verification = request.Verification;
         existing.Tags = request.Tags;
         existing.Status = request.Status;
+        existing.Runbook = request.Runbook;
         existing.Version += 1;
         existing.UpdatedAt = DateTime.UtcNow;
         existing.EmbeddingState = Domain.Knowledge.EmbeddingState.Pending;

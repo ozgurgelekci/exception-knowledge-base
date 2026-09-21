@@ -3,6 +3,7 @@ using ExceptionKnowledgeBase.Application.Normalization;
 using ExceptionKnowledgeBase.Application.Options;
 using ExceptionKnowledgeBase.Application.Security;
 using ExceptionKnowledgeBase.Application.Services;
+using ExceptionKnowledgeBase.Application.Telemetry;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -24,6 +25,10 @@ public static class ApplicationServiceCollectionExtensions
         services.AddSingleton<IPromptBuilder, PromptBuilder>();
         services.AddSingleton<IConfidenceCalculator, ConfidenceCalculator>();
         services.AddSingleton<IRootCauseClassifier, RootCauseClassifier>();
+        services.AddSingleton<IReRanker, LexicalOverlapReRanker>();
+        services.AddSingleton<IAnomalyAlertSink, InMemoryAnomalyAlertSink>();
+        services.AddSingleton<IAnomalyDetector, InMemoryAnomalyDetector>();
+        services.AddSingleton<AiMetrics>();
 
         services.AddScoped<IExceptionAnalysisService, ExceptionAnalysisService>();
         services.AddScoped<IKnowledgeService, KnowledgeService>();

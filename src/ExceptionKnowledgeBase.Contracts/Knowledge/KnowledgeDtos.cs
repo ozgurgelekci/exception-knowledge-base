@@ -12,6 +12,8 @@ public sealed class CreateKnowledgeEntryRequest
     public List<string> Tags { get; set; } = new();
     public string? CreatedBy { get; set; }
     public string Status { get; set; } = "draft";
+    // §75: optional runbook markdown attached to the entry.
+    public string? Runbook { get; set; }
 }
 
 public sealed class KnowledgeEntryResponse
@@ -31,4 +33,5 @@ public sealed class KnowledgeEntryResponse
     public string? VerifiedBy { get; set; }
     public DateTime? VerifiedAt { get; set; }
     public DateTime? ArchivedAt { get; set; }
+    public string? Runbook { get; set; }
 }

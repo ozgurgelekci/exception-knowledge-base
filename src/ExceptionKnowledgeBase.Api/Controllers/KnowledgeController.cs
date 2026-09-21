@@ -112,6 +112,7 @@ public sealed class KnowledgeController : ControllerBase
         UpdatedAt = entry.UpdatedAt,
         VerifiedBy = entry.VerifiedBy,
         VerifiedAt = entry.VerifiedAt,
-        ArchivedAt = entry.ArchivedAt
+        ArchivedAt = entry.ArchivedAt,
+        Runbook = entry.Runbook
     };
 }

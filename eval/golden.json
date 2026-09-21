@@ -1,0 +1,24 @@
+[
+  {
+    "id": "sql-timeout-01",
+    "exceptionType": "System.Data.SqlClient.SqlException",
+    "message": "Execution Timeout Expired. The timeout period elapsed prior to completion of the operation.",
+    "database": "sqlserver",
+    "module": "billing",
+    "expectedSourceIds": ["kb-sql-timeout", "kb-connection-pool-exhaustion"]
+  },
+  {
+    "id": "npe-01",
+    "exceptionType": "System.NullReferenceException",
+    "message": "Object reference not set to an instance of an object.",
+    "module": "checkout",
+    "expectedSourceIds": ["kb-null-guard"]
+  },
+  {
+    "id": "auth-01",
+    "exceptionType": "Microsoft.IdentityModel.Tokens.SecurityTokenExpiredException",
+    "message": "IDX10223: Lifetime validation failed. The token is expired.",
+    "module": "auth",
+    "expectedSourceIds": ["kb-jwt-clock-skew", "kb-token-refresh"]
+  }
+]

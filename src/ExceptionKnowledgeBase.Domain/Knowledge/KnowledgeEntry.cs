@@ -20,6 +20,9 @@ public sealed class KnowledgeEntry
     public List<string> Tags { get; set; } = new();
     public string Status { get; set; } = "draft";     // draft | verified | archived
 
+    // §75: markdown runbook — surfaced to callers alongside solutions.
+    public string? Runbook { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public string? CreatedBy { get; set; }

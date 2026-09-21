@@ -27,6 +27,14 @@ verir.
 - Root cause taxonomy: her definition/analiz için `timeout | auth | database | network | ...` kategorisi.
 - Trend endpoint'i: `GET /api/exceptions/trends?days=14` — fingerprint × gün occurrence sayıları.
 
+**Phase 5 (§77-§78) eklemeleri:**
+- Pluggable re-ranker (`IReRanker`): lexical overlap ile cross-encoder placeholder; her tur eğitilmemiş bir modelle değiştirilebilir.
+- Runbook markdown alanı: knowledge kartlarına opsiyonel `runbook` — LLM prompt'una `Runbook:` satırı olarak eklenir.
+- In-process anomaly detector (§75): ring buffer + kısa/uzun pencere oranı; `GET /api/exceptions/alerts` ile son alert'ler.
+- Cost + latency telemetry (§78): `ExceptionKnowledgeBase.Ai` Meter'ı — `ai.tokens.prompt`, `ai.tokens.completion`, `ai.embedding.calls`, `ai.analyses.run`, `ai.*.latency_ms`.
+- OpenTelemetry: AspNetCore + HttpClient tracing, runtime metrics, `AiMetrics` meter; OTLP endpoint `OTEL_EXPORTER_OTLP_ENDPOINT` env var'ı ile opt-in.
+- Evaluator console projesi (`ExceptionKnowledgeBase.Evaluator`): `eval/golden.json` beklentileri üzerinden `precision@k`, recall ve hallucination oranı raporlar.
+
 ---
 
 ## İçindekiler
