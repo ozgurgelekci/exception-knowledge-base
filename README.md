@@ -603,11 +603,15 @@ Aynı sorgu ekseninde `database=mongodb`, `module=Invoicing` gibi filtreler JSON
 `@>` operatörüyle uygulanır. `embeddings_metadata_gin` index'i bu tür
 predicate'leri hızlandırır.
 
-### 10.4 Hybrid search (Section 16, Phase 2)
+### 10.4 Hybrid search (Section 16)
 
 `ORA-00060`, `SqlException 2627` gibi exact hata kodları için vector search
-tek başına ideal değildir. MVP'de sadece vector search var; hybrid search
-(BM25/tsvector re-ranking) Phase 2 için planlanmıştır.
+tek başına ideal değildir. Bu nedenle `PgVectorSearchService` iki paralel
+sorgu çalıştırır — pgvector cosine KNN + Postgres `tsvector` full-text
+(`websearch_to_tsquery`) — sonuçlar **Reciprocal Rank Fusion** ile
+birleştirilir (`AnalysisOptions.HybridEnabled`, `HybridRrfK`,
+`HybridVectorWeight`, `HybridLexicalWeight`). Ardından `IReRanker` son
+sıralamayı verir.
 
 ---
 
@@ -731,8 +735,11 @@ Section 47'ye göre tenant birinci sınıf filtre:
 - Fingerprint dedupe'u **tenant'a özel** — aynı hata farklı tenant'larda ayrı
   definition oluşturur.
 
-Global bilgi + tenant-specific bilgi (Section 48) MVP'de yok; Phase 3'te
-`tenantId = null` global scope + merge stratejisi eklenmesi planlı.
+Global bilgi + tenant-specific bilgi merge (Section 48) aktiftir:
+`Analysis:GlobalKnowledgeEnabled = true` iken tenant + `Analysis:GlobalTenantId`
+(default `global`) tek sorguda birleşir ve RRF öncesinde `additionalTenants`
+listesi olarak `PgVectorSearchService`'e verilir. Fingerprint dedupe'u yine
+tenant'a özel kalır — global scope sadece knowledge_entries için geçerlidir.
 
 ---
 
@@ -793,19 +800,21 @@ tarafından uygulanır.
 
 `/analyze` endpoint'i **sync** modda çalışır (kullanıcı sonucu hemen alır);
 worker'lar mevcut definition ve knowledge kayıtları için asenkron toplu
-işlem yürütür. Full async model (Section 64) Phase 2.
+işlem yürütür. Full async model (Section 64) `POST /analyze/async` + 202 +
+`Location: /api/analyses/{id}` + `GET /api/analyses/{id}` polling ile de
+mevcuttur — pending kaydı `AnalysesController.Get` ile poll edilir.
 
 ---
 
 ## 17. Caching stratejisi
 
-Section 57'deki katmanlardan MVP'de sadece **Embedding Cache** aktif:
+Section 57'deki üç katman aktif:
 
-| Katman            | Durum      | Neden                                                   |
-|-------------------|------------|---------------------------------------------------------|
-| Embedding cache   | ✅ aktif   | Aynı normalize metin → aynı vektör, çağrı gereksiz      |
-| AI response cache | ❌ MVP dışı | Knowledge versiyonu değiştiğinde eski cevap zehirlenir (§36). Doğru key: `ai:{exceptionHash}:{knowledgeVersion}:{promptVersion}:{model}` |
-| Search cache      | ❌ MVP dışı | Sık aranan sorgular için Phase 2                        |
+| Katman            | Durum   | Anahtar / not                                                                     |
+|-------------------|---------|------------------------------------------------------------------------------------|
+| Embedding cache   | ✅ aktif | `embedding:sha256(content):model:version`, TTL `Redis:EmbeddingTtlSeconds` (7g)   |
+| AI response cache | ✅ aktif | `ai:{tenant}:{fingerprint}:{knowledgeVersion}:{promptVersion}:{model}` — knowledge/prompt versiyonu değişince eski cevap otomatik geçersiz (`RedisAnalysisResponseCache`) |
+| Search cache     | ✅ aktif | `search:{tenant}:{sha256(request)}` — analyze/search response tekrarları için (`RedisSearchResponseCache`) |
 
 Redis bağlantı string'i `Redis:ConnectionString` boş bırakılırsa DI'a hiç
 kaydedilmez — sistem tamamen çalışır durumdadır, sadece her request için OpenAI
@@ -848,12 +857,19 @@ PromptTokens, CompletionTokens,
 Model.Embedding, Model.Chat, PromptVersion, KnowledgeVersion
 ```
 
-### Metrics (Section 67, planlı)
+### Metrics (Section 67, §78)
 
-Prometheus için önerilen sayaçlar (MVP'de logdan türetilebilir, Phase 2'de
-export edilecek): `exception_analysis_total`, `embedding_cache_hits_total`,
-`vector_search_duration_seconds`, `llm_tokens_total`,
-`ai_solution_helpful_total`.
+`ExceptionKnowledgeBase.Ai` `Meter`'ı (`Application/Telemetry/AiMetrics.cs`)
+üzerinden yayınlanan sayaçlar:
+
+- `ai.tokens.prompt`, `ai.tokens.completion` (per-model)
+- `ai.embedding.calls`, `ai.embedding.latency_ms`
+- `ai.vector_search.latency_ms`
+- `ai.llm.latency_ms`, `ai.analyses.run` (status/model etiketli)
+
+Program.cs OpenTelemetry setup'ı bu meter'ı + AspNetCore + HttpClient +
+runtime metriklerini toplayıp `OTEL_EXPORTER_OTLP_ENDPOINT` env var'ı
+tanımlıysa OTLP üzerinden dışa aktarır; tanımlı değilse in-process kalır.
 
 ---
 
