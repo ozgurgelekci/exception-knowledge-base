@@ -364,7 +364,7 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
 
         _metrics.RecordAnalysis(tenantId, completion.Model, llmSw.ElapsedMilliseconds, totalSw.ElapsedMilliseconds, analysis.Status);
 
-        var response = ToResponse(analysis);
+        var response = AnalysisResponseMapper.ToResponse(analysis);
 
         if (_analysis.AnalysisCacheEnabled && _analysisCache is not null && analysis.Status == "ready")
         {
@@ -374,48 +374,6 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
 
         return response;
     }
-
-    private static AnalyzeExceptionResponse ToResponse(AiAnalysis a) => new()
-    {
-        AnalysisId = a.Id,
-        Status = a.Status,
-        Summary = a.Summary,
-        RootCause = new RootCauseDto { Text = a.RootCause, Confidence = a.RootCauseConfidence },
-        Confidence = a.ApplicationConfidence,
-        RootCauseCategory = a.RootCauseCategory,
-        ClusterId = a.ClusterId,
-        SuggestedLogQueries = a.SuggestedLogQueries.Select(q => new SuggestedLogQueryDto
-        {
-            Backend = q.Backend,
-            Label = q.Label,
-            Query = q.Query
-        }).ToList(),
-        Evidence = a.Evidence.Select(e => new EvidenceDto
-        {
-            EntityType = e.EntityType,
-            EntityId = e.EntityId,
-            Title = e.Title,
-            Similarity = e.Similarity
-        }).ToList(),
-        Sources = a.Sources,
-        RecommendedChecks = a.RecommendedChecks,
-        RecommendedSolutions = a.RecommendedSolutions,
-        Known = a.KnownStatement,
-        Likely = a.LikelyStatement,
-        Unknown = a.UnknownStatement,
-        Usage = new UsageDto
-        {
-            EmbeddingModel = a.EmbeddingModel,
-            LlmModel = a.LlmModel,
-            PromptTokens = a.PromptTokens,
-            CompletionTokens = a.CompletionTokens,
-            TotalTokens = a.TotalTokens,
-            EmbeddingLatencyMs = a.EmbeddingLatencyMs,
-            VectorSearchLatencyMs = a.VectorSearchLatencyMs,
-            LlmLatencyMs = a.LlmLatencyMs,
-            TotalLatencyMs = a.TotalLatencyMs
-        }
-    };
 
     private Dictionary<string, string>? BuildKnowledgeSearchFilters()
     {
