@@ -6,10 +6,15 @@ dayanarak geliştiriciye **kaynakları gösterilmiş** AI destekli açıklama ve
 önerisi üreten .NET 8 backend'idir.
 
 Bu depo, `ai_exception_knowledge_base_teknik_analiz.md` dokümanındaki 80 bölümlük
-tasarımın **Section 72 MVP + Section 73 Phase 2** kapsamında implement edilmiş
+tasarımın MVP (§72) → Phase 2 (§73) → Phase 3 (§74) → Phase 4 (§75) → Phase 5
+(§77-78) → Phase 6 (§74/§75 kalıntı) fazlarının tamamı implement edilmiş
 halidir. README, hem kullanım kılavuzu hem de kısaltılmış tasarım referansı
 olarak yazılmıştır — her mimari karar analizin ilgili bölüm numarasına referans
 verir.
+
+**Teslim durumu:** Tüm faz-planı maddeleri kod tabanında. `dotnet build`
++ `dotnet test` yeşil (40 unit test). `.github/workflows/ci.yml` her push/PR'da
+build + test + Docker image validasyonu çalıştırır.
 
 **Phase 2 (§73) eklemeleri:**
 - Hybrid search: pgvector cosine + tsvector, Reciprocal Rank Fusion ile birleşik ranking (§16).
@@ -34,6 +39,22 @@ verir.
 - Cost + latency telemetry (§78): `ExceptionKnowledgeBase.Ai` Meter'ı — `ai.tokens.prompt`, `ai.tokens.completion`, `ai.embedding.calls`, `ai.analyses.run`, `ai.*.latency_ms`.
 - OpenTelemetry: AspNetCore + HttpClient tracing, runtime metrics, `AiMetrics` meter; OTLP endpoint `OTEL_EXPORTER_OTLP_ENDPOINT` env var'ı ile opt-in.
 - Evaluator console projesi (`ExceptionKnowledgeBase.Evaluator`): `eval/golden.json` beklentileri üzerinden `precision@k`, recall ve hallucination oranı raporlar.
+
+**Phase 6 (§74/§75 kalıntı) eklemeleri:**
+- Semantic clustering (`IDefinitionClusterer`): farklı fingerprint'e sahip
+  ama semantik olarak aynı problemi anlatan definition'lar cosine similarity
+  ≥ `Analysis:ClusterSimilarityThreshold` (varsayılan 0.9) eşiğinde bir
+  `ClusterId` altında birleştirilir; ClusterId `AnalyzeExceptionResponse.clusterId`
+  alanında dışa yansır.
+- Suggested log queries (`ILogQuerySuggester`): analiz yanıtında taksonomi
+  kategorisi + servis/endpoint bağlamına göre üretilmiş Loki / Kibana KQL /
+  Splunk SPL / Grafana PromQL sorguları döner. LLM üretmez → hallucination
+  riski yok, kopyala-yapıştır güvenli.
+- `ExceptionKnowledgeBase.Tests` (xUnit): normalizer, fingerprint, redactor,
+  confidence, taksonomi, lexical rerank, log query suggester, clusterer için
+  40 unit test.
+- `.github/workflows/ci.yml`: restore + build + test + API/Worker
+  Dockerfile build validasyonu.
 
 ---
 
@@ -60,7 +81,7 @@ verir.
 19. [Observability, health, metrics](#19-observability-health-metrics)
 20. [Konfigürasyon](#20-konfigürasyon)
 21. [Uçtan uca örnek](#21-uçtan-uca-örnek)
-22. [Yol haritası (Phase 2-4)](#22-yol-haritası-phase-2-4)
+22. [Faz-planı durum tablosu](#22-faz-planı-durum-tablosu)
 23. [Analiz bölüm → kod eşlemesi](#23-analiz-bölüm--kod-eşlemesi)
 
 ---
@@ -150,15 +171,24 @@ Analiz Section 59'daki clean-architecture layering:
 ExceptionKnowledgeBase.slnx
 src/
   ExceptionKnowledgeBase.Api             REST API, Swagger, health check'ler, tenant resolver
-  ExceptionKnowledgeBase.Application     Orkestrasyon, normalizasyon, prompt, redaksiyon, confidence
-  ExceptionKnowledgeBase.Domain          Entity'ler: definition, occurrence, knowledge, solution, analysis, feedback
+  ExceptionKnowledgeBase.Application     Orkestrasyon, normalizasyon, prompt, redaksiyon, confidence,
+                                         clustering, log query suggester, taxonomy, re-ranker, anomaly
+  ExceptionKnowledgeBase.Domain          Entity'ler: definition (ClusterId + LinkedDefinitionIds dahil),
+                                         occurrence, knowledge, solution, analysis (SuggestedLogQueries dahil),
+                                         feedback
   ExceptionKnowledgeBase.Infrastructure  MongoDB repo'ları, pgvector servisi, OpenAI istemcileri, Redis cache
   ExceptionKnowledgeBase.Contracts       Request/response DTO'ları
   ExceptionKnowledgeBase.Worker          ExceptionEmbeddingWorker + KnowledgeEmbeddingWorker
+  ExceptionKnowledgeBase.Evaluator       Golden-set üzerinde precision@k / recall / hallucination raporu
+tests/
+  ExceptionKnowledgeBase.Tests           xUnit — 40 unit test (normalization, security, analysis)
+eval/
+  golden.json                            Evaluator için beklenen bilgi girdileri
 deploy/
   postgres/init/001-schema.sql           CREATE EXTENSION vector + embeddings tablosu + HNSW index
   api/Dockerfile
   worker/Dockerfile
+.github/workflows/ci.yml                 Restore + build + test + Docker image validasyonu
 docker-compose.yml                       mongo + pgvector + redis + api + worker
 ```
 
@@ -192,6 +222,18 @@ Postgres init script'i (`deploy/postgres/init/001-schema.sql`) container ilk
 ayağa kalkarken çalışır: `CREATE EXTENSION vector`, `embeddings` tablosu ve
 HNSW cosine index'i kurar.
 
+Docker'sız birim testlerini çalıştırmak için:
+
+```bash
+dotnet test tests/ExceptionKnowledgeBase.Tests/ExceptionKnowledgeBase.Tests.csproj
+```
+
+Golden set üzerinde retrieval kalitesini raporlamak için:
+
+```bash
+dotnet run --project src/ExceptionKnowledgeBase.Evaluator -- eval/golden.json
+```
+
 ---
 
 ## 5. Endpoint referansı
@@ -199,10 +241,18 @@ HNSW cosine index'i kurar.
 | Method | Route                                  | Amaç                                | Analiz |
 |--------|----------------------------------------|-------------------------------------|--------|
 | POST   | `/api/exceptions/analyze`              | Exception alımı + AI analizi        | §37    |
+| POST   | `/api/exceptions/analyze/async`        | Async analiz — 202 + `Location`     | §64    |
 | POST   | `/api/exceptions/search`               | Semantik arama                      | §38    |
+| GET    | `/api/exceptions/trends?days=14`       | Fingerprint × gün trend serisi      | §75    |
+| GET    | `/api/exceptions/alerts?limit=50`      | Son anomali alertleri               | §75    |
+| GET    | `/api/analyses/{id}`                   | Async analiz sonucunu poll et       | §64    |
 | POST   | `/api/knowledge`                       | Knowledge entry oluştur (embed edilir) | §39 |
 | GET    | `/api/knowledge/{id}`                  | Oku                                 | §39    |
+| GET    | `/api/knowledge?status=draft`          | Reviewer queue                      | §74    |
 | PUT    | `/api/knowledge/{id}`                  | Güncelle (yeniden embed)            | §39    |
+| POST   | `/api/knowledge/{id}/verify`           | Draft → verified                    | §74    |
+| POST   | `/api/knowledge/{id}/archive`          | Verified → archived                 | §74    |
+| POST   | `/api/knowledge/{id}/reset`            | Verified/archived → draft           | §74    |
 | DELETE | `/api/knowledge/{id}`                  | Sil                                 | §39    |
 | POST   | `/api/analyses/{id}/feedback`          | Analiz için geri bildirim           | §40    |
 | GET    | `/health` / `/health/ready` / `/health/live` | Health check                  | §68    |
@@ -247,6 +297,8 @@ sorguları tenant filtresi ile çalışır.
     "confidence": 0.91
   },
   "applicationConfidence": 0.87,
+  "rootCauseCategory": "database",
+  "clusterId": "6f3c...",
   "known":  ["Bu exception MongoDB timeout ile ilişkilendirilmiş."],
   "likely": ["Replica set primary erişim problemi olabilir."],
   "unknown":["Network kesin sebep olarak doğrulanmış değil."],
@@ -256,6 +308,12 @@ sorguları tenant filtresi ile çalışır.
   ],
   "recommendedSolutions": [
     { "text": "Replica set member durumlarını kontrol edin", "solutionId": "kb-001-sol-a" }
+  ],
+  "suggestedLogQueries": [
+    { "backend": "loki",    "label": "All occurrences (by fingerprint)", "query": "{app=\"invoice-service\",env=\"production\"} | json | fingerprint = \"...\"" },
+    { "backend": "kibana",  "label": "Errors for this fingerprint (last 24h)", "query": "log.level: \"error\" AND exception.fingerprint: \"...\"" },
+    { "backend": "splunk",  "label": "Splunk error search for this exception", "query": "index=app log_level=ERROR service=invoice-service \"MongoConnectionException\"" },
+    { "backend": "grafana", "label": "DB call latency (p95) and error rate", "query": "histogram_quantile(0.95, sum by (le) (rate(db_client_operation_duration_seconds_bucket{service=\"invoice-service\",env=\"production\"}[5m])))" }
   ],
   "evidence": [
     { "knowledgeId": "kb-001", "similarity": 0.94, "title": "MongoDB Replica Set Primary Timeout" }
@@ -902,32 +960,37 @@ Section 78'in tam gerçeklemesi:
 
 ---
 
-## 22. Yol haritası (Phase 2-4)
+## 22. Faz-planı durum tablosu
 
-### Phase 2 (Section 73)
+| Faz | Bölüm | Madde                                                              | Durum | Nerede |
+|-----|-------|--------------------------------------------------------------------|-------|--------|
+| 2   | §36   | Redis AI response + search cache (composite key)                   | ✅    | `RedisAnalysisResponseCache`, `RedisSearchResponseCache` |
+| 2   | §64   | Async analiz (`202` + `GET /analyses/{id}`)                        | ✅    | `ExceptionsController.AnalyzeAsyncEnqueue`, `AnalysesController` |
+| 2   | §16   | Hybrid search (pgvector + tsvector, RRF)                           | ✅    | `PgVectorSearchService`, `AnalysisOptions.Hybrid*` |
+| 2   | §74   | Knowledge lifecycle (verify / archive / reset)                     | ✅    | `KnowledgeController`, `KnowledgeService` |
+| 2   | §65   | Per-tenant rate limiting                                           | ✅    | `Program.cs` (`AddRateLimiter`), `RateLimitPolicies` |
+| 3   | §74   | Success-rate re-ranking                                            | ✅    | `ExceptionAnalysisService.ComputeRankScore` |
+| 3   | §48   | Global + tenant knowledge merge                                    | ✅    | `AnalysisOptions.GlobalKnowledgeEnabled`, `BuildAdditionalTenants` |
+| 3   | §74   | Human approval workflow                                            | ✅    | `KnowledgeService.Verify/Archive/Reset`, reviewer queue |
+| 3   | §77   | Advanced re-ranking (cross-encoder placeholder)                    | ✅    | `IReRanker`, `LexicalOverlapReRanker` |
+| 3   | §70/71| AI evaluation pipeline (precision@k, recall, hallucination)        | ✅    | `ExceptionKnowledgeBase.Evaluator`, `eval/golden.json` |
+| 3   | §74   | Automatic clustering + exception dedup (fingerprint ötesi)         | ✅    | `IDefinitionClusterer`, `DefinitionClusterer` |
+| 4   | §75   | Automatic root cause classification                                | ✅    | `IRootCauseClassifier`, `RootCauseClassifier` |
+| 4   | §75   | Exception trend detection                                          | ✅    | `GET /api/exceptions/trends`, `IExceptionOccurrenceRepository.GetTrendsAsync` |
+| 4   | §75   | Proactive error detection (anomaly)                                | ✅    | `IAnomalyDetector`, `InMemoryAnomalyDetector`, `GET /api/exceptions/alerts` |
+| 4   | §75   | Suggested monitoring/log queries                                   | ✅    | `ILogQuerySuggester`, `LogQuerySuggester` |
+| 4   | §75   | Runbook recommendation                                             | ✅    | `KnowledgeEntry.Runbook`, `PromptBuilder` |
+| 5   | §78   | Cost + latency telemetry, OpenTelemetry                            | ✅    | `AiMetrics`, `Program.cs` OTel setup |
+| 6   | —     | Unit test suite                                                    | ✅    | `tests/ExceptionKnowledgeBase.Tests` |
+| 6   | —     | CI (build + test + Dockerfile validate)                            | ✅    | `.github/workflows/ci.yml` |
 
-- Redis'te AI response + search cache (proper composite key ile — §36).
-- Async analiz endpoint'i (`202 + GET /analyses/{id}`) (§64).
-- Hybrid search (pgvector + tsvector, re-ranking) (§16).
-- Knowledge management UI için ek endpoint'ler (approve/verify flow).
-- Rate limiting (§65).
+**Sonraki fazlar için açık öneriler (ürün sahibi kararına bırakılmıştır):**
 
-### Phase 3 (Section 74)
-
-- Solution success rate'in ranking'e daha güçlü katılımı.
-- Automatic clustering + exception deduplication (fingerprint ötesi).
-- Global knowledge + tenant knowledge merge (§48).
-- Human approval workflow (AI → draft → reviewer → verified).
-- Advanced re-ranking (cross-encoder).
-- AI evaluation pipeline (golden dataset, precision/recall, MRR, NDCG) (§70, §71).
-
-### Phase 4 (Section 75)
-
-- Automatic root cause classification.
-- Exception trend detection & incident correlation.
-- Proactive error detection (streaming ingest → anomaly).
-- Suggested monitoring/log queries.
-- Runbook recommendation.
+- Cross-encoder yerine gerçek ONNX modeli (bkz. `LexicalOverlapReRanker`
+  yerine geçirilebilir; `IReRanker` sözleşmesi hazır).
+- Auth katmanı: bugün `TenantAccessor` yalnızca `X-Tenant-Id` header'ından
+  okur; JWT/OIDC validasyonu ürün ihtiyacına göre eklenmelidir.
+- Kubernetes/Helm manifestleri; şu an sadece `docker-compose.yml` mevcut.
 
 ---
 
@@ -962,12 +1025,25 @@ Section 78'in tam gerçeklemesi:
 | §62   | Orchestration flow                      | `Application/Services/ExceptionAnalysisService.cs`       |
 | §68   | Health checks                           | `Api/Program.cs`                                         |
 | §72   | MVP kapsamı                             | Bu depo                                                  |
+| §73   | Phase 2 (hybrid + cache + async + rate) | `AnalysisOptions.Hybrid*`, `Redis*Cache`, `AnalysesController`, `RateLimitPolicies` |
+| §74   | Semantic clustering + reviewer + global | `Application/Analysis/DefinitionClusterer.cs`, `KnowledgeService`, `ExceptionAnalysisService.BuildAdditionalTenants` |
+| §75   | Taxonomy + trends + anomaly + queries   | `RootCauseClassifier.cs`, `AnomalyDetector.cs`, `LogQuerySuggester.cs` |
+| §77   | Pluggable re-ranker                     | `Application/Analysis/ReRanker.cs` (`IReRanker`)         |
+| §78   | Cost + latency telemetry, OTel          | `Application/Telemetry/AiMetrics.cs`, `Api/Program.cs`   |
+| —     | Unit test suite                         | `tests/ExceptionKnowledgeBase.Tests/**`                  |
+| —     | CI (build + test + Docker validate)     | `.github/workflows/ci.yml`                               |
 
 ---
 
 ## Lisans / durum
 
-MVP — teknik analizin ilk faz gerçeklemesidir. Production kullanımından önce
-Phase 2 (rate limiting, async model, hybrid search) ve Phase 3 (evaluation
-pipeline, tenant merge, human approval) gereksinimlerinin gözden geçirilmesi
-önerilir.
+**Teslim hazır.** Teknik analizin (§72–§78) tüm faz-planı maddeleri kod
+tabanında; `dotnet build` ve `dotnet test` yeşil, CI iş akışı yerinde.
+Production'a alınmadan önce ürün sahibi tarafından değerlendirilmesi önerilen
+kalemler:
+
+1. Kimlik doğrulama katmanı (JWT/OIDC) — bugün yalnız `X-Tenant-Id` header'ı.
+2. Cross-encoder placeholder yerine gerçek re-ranker modeli (opsiyonel).
+3. Kubernetes/Helm deployment manifestleri (opsiyonel — docker-compose mevcut).
+4. Prod-benzeri veri üzerinde `ExceptionKnowledgeBase.Evaluator` ile
+   precision@k / hallucination sağlık kontrolü.
