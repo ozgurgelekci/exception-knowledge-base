@@ -38,6 +38,8 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
     private readonly IChatCompletionService _chat;
     private readonly IConfidenceCalculator _confidence;
     private readonly IRootCauseClassifier _rootCauseClassifier;
+    private readonly ILogQuerySuggester _logQuerySuggester;
+    private readonly IDefinitionClusterer _clusterer;
     private readonly IReRanker _reRanker;
     private readonly IAnomalyDetector _anomalyDetector;
     private readonly AiMetrics _metrics;
@@ -64,6 +66,8 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
         IChatCompletionService chat,
         IConfidenceCalculator confidence,
         IRootCauseClassifier rootCauseClassifier,
+        ILogQuerySuggester logQuerySuggester,
+        IDefinitionClusterer clusterer,
         IReRanker reRanker,
         IAnomalyDetector anomalyDetector,
         AiMetrics metrics,
@@ -89,6 +93,8 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
         _chat = chat;
         _confidence = confidence;
         _rootCauseClassifier = rootCauseClassifier;
+        _logQuerySuggester = logQuerySuggester;
+        _clusterer = clusterer;
         _reRanker = reRanker;
         _anomalyDetector = anomalyDetector;
         _metrics = metrics;
@@ -245,6 +251,18 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
         definition.EmbeddingModelVersion = embedding.ModelVersion;
         definition.EmbeddingDimensions = embedding.Dimensions;
         definition.EmbeddedAt = DateTime.UtcNow;
+
+        // Phase 3 (§74): resolve semantic cluster once the fresh embedding is indexed
+        // so the assignment reflects the current definition, not a stale vector.
+        try
+        {
+            await _clusterer.AssignAsync(definition, embedding.Vector, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Clustering failed for definition {Id}", definition.Id);
+        }
+
         await _definitions.UpsertAsync(definition, ct);
 
         var searchSw = Stopwatch.StartNew();
@@ -286,6 +304,17 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
         var topSuccess = candidates.Select(c => c.SolutionSuccessRate).FirstOrDefault(r => r.HasValue);
         var appConfidence = _confidence.Compute(similarities, parsed?.RootCauseConfidence ?? 0d, topSuccess);
 
+        var suggestedQueries = _analysis.LogQuerySuggestionsEnabled
+            ? _logQuerySuggester
+                .Suggest(definition, new LogQueryContext(
+                    Service: request.Service,
+                    Environment: request.Environment,
+                    Endpoint: request.Endpoint,
+                    ErrorCode: request.ErrorCode))
+                .Select(q => new SuggestedLogQueryRecord { Backend = q.Backend, Label = q.Label, Query = q.Query })
+                .ToList()
+            : new List<SuggestedLogQueryRecord>();
+
         totalSw.Stop();
 
         var analysis = new AiAnalysis
@@ -302,6 +331,8 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
             RootCauseConfidence = parsed?.RootCauseConfidence ?? 0,
             ApplicationConfidence = appConfidence,
             RootCauseCategory = definition.RootCauseCategory,
+            ClusterId = definition.ClusterId,
+            SuggestedLogQueries = suggestedQueries,
             RecommendedChecks = parsed?.RecommendedChecks ?? new(),
             RecommendedSolutions = parsed?.RecommendedSolutions ?? new(),
             KnownStatement = parsed?.Known,
@@ -352,6 +383,13 @@ public sealed class ExceptionAnalysisService : IExceptionAnalysisService
         RootCause = new RootCauseDto { Text = a.RootCause, Confidence = a.RootCauseConfidence },
         Confidence = a.ApplicationConfidence,
         RootCauseCategory = a.RootCauseCategory,
+        ClusterId = a.ClusterId,
+        SuggestedLogQueries = a.SuggestedLogQueries.Select(q => new SuggestedLogQueryDto
+        {
+            Backend = q.Backend,
+            Label = q.Label,
+            Query = q.Query
+        }).ToList(),
         Evidence = a.Evidence.Select(e => new EvidenceDto
         {
             EntityType = e.EntityType,

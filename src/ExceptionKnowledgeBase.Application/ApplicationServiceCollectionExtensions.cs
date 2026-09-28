@@ -25,7 +25,9 @@ public static class ApplicationServiceCollectionExtensions
         services.AddSingleton<IPromptBuilder, PromptBuilder>();
         services.AddSingleton<IConfidenceCalculator, ConfidenceCalculator>();
         services.AddSingleton<IRootCauseClassifier, RootCauseClassifier>();
+        services.AddSingleton<ILogQuerySuggester, LogQuerySuggester>();
         services.AddSingleton<IReRanker, LexicalOverlapReRanker>();
+        services.AddScoped<IDefinitionClusterer, DefinitionClusterer>();
         services.AddSingleton<IAnomalyAlertSink, InMemoryAnomalyAlertSink>();
         services.AddSingleton<IAnomalyDetector, InMemoryAnomalyDetector>();
         services.AddSingleton<AiMetrics>();

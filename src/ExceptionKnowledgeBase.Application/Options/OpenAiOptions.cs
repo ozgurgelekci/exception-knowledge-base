@@ -64,6 +64,16 @@ public sealed class AnalysisOptions
     // Phase 4 (§75): fingerprint trend endpoint horizon.
     public int TrendDefaultDays { get; set; } = 14;
     public int TrendMaxDays { get; set; } = 90;
+
+    // Phase 3 (§74): semantic clustering of definitions beyond fingerprint.
+    // A neighbour with similarity >= threshold shares the same ClusterId.
+    public bool ClusteringEnabled { get; set; } = true;
+    public double ClusterSimilarityThreshold { get; set; } = 0.9;
+    public int ClusterCandidatePoolSize { get; set; } = 10;
+    public int ClusterMaxLinkedIds { get; set; } = 50;
+
+    // Phase 4 (§75): suggested monitoring/log queries.
+    public bool LogQuerySuggestionsEnabled { get; set; } = true;
 }
 
 // Phase 2 (§65): per-tenant rate limiting.

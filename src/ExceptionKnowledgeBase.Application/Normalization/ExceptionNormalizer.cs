@@ -10,17 +10,19 @@ public interface IExceptionNormalizer
 
 public sealed class ExceptionNormalizer : IExceptionNormalizer
 {
+    // Ordering matters: greedy tokens like URL and TIMESTAMP must run before
+    // narrower ones (PATH, PORT) that would otherwise swallow their substrings.
     private static readonly (Regex Pattern, string Replacement)[] Rules =
     {
         (new Regex(@"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", RegexOptions.IgnoreCase | RegexOptions.Compiled), "{GUID}"),
+        (new Regex(@"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?\b", RegexOptions.Compiled), "{TIMESTAMP}"),
+        (new Regex(@"https?://[^\s""']+", RegexOptions.Compiled), "{URL}"),
         (new Regex(@"\b(?:\d{1,3}\.){3}\d{1,3}\b", RegexOptions.Compiled), "{IP}"),
         (new Regex(@"(?<=:)\d{2,5}\b", RegexOptions.Compiled), "{PORT}"),
-        (new Regex(@"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?\b", RegexOptions.Compiled), "{TIMESTAMP}"),
         (new Regex(@"\bafter\s+\d+\s?ms\b", RegexOptions.IgnoreCase | RegexOptions.Compiled), "after {DURATION}ms"),
         (new Regex(@"\bin\s+\d+\s?ms\b", RegexOptions.IgnoreCase | RegexOptions.Compiled), "in {DURATION}ms"),
         (new Regex(@"\b\d{7,}\b", RegexOptions.Compiled), "{LARGE_NUMBER}"),
         (new Regex(@"([A-Za-z]:\\|/)[^\s""']+", RegexOptions.Compiled), "{PATH}"),
-        (new Regex(@"https?://[^\s""']+", RegexOptions.Compiled), "{URL}"),
         (new Regex(@"\s+", RegexOptions.Compiled), " "),
     };
 

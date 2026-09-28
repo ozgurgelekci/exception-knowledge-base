@@ -13,6 +13,12 @@ public sealed class AnalyzeExceptionResponse
     // Phase 4 (§75): coarse taxonomy category (timeout | auth | database | network | ...).
     public string? RootCauseCategory { get; set; }
 
+    // Phase 3 (§74): semantic cluster shared by related fingerprints.
+    public string? ClusterId { get; set; }
+
+    // Phase 4 (§75): deterministic log/monitoring query suggestions.
+    public List<SuggestedLogQueryDto> SuggestedLogQueries { get; set; } = new();
+
     public List<EvidenceDto> Evidence { get; set; } = new();
     public List<string> Sources { get; set; } = new();
 
@@ -38,6 +44,13 @@ public sealed class EvidenceDto
     public string EntityId { get; set; } = string.Empty;
     public string? Title { get; set; }
     public double Similarity { get; set; }
+}
+
+public sealed class SuggestedLogQueryDto
+{
+    public string Backend { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string Query { get; set; } = string.Empty;
 }
 
 public sealed class UsageDto

@@ -48,6 +48,12 @@ public sealed class ExceptionDefinition
     public string? EmbeddingError { get; set; }
 
     public List<string> LinkedKnowledgeEntryIds { get; set; } = new();
+
+    // Phase 3 (§74): semantic cluster ID shared by fingerprints that describe the
+    // same underlying problem. Populated by DefinitionClusterer; defaults to the
+    // definition's own Id until a neighbour merges it in.
+    public string? ClusterId { get; set; }
+    public List<string> LinkedDefinitionIds { get; set; } = new();
 }
 
 public enum EmbeddingState

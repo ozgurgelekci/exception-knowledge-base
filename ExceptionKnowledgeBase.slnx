@@ -8,4 +8,7 @@
     <Project Path="src/ExceptionKnowledgeBase.Infrastructure/ExceptionKnowledgeBase.Infrastructure.csproj" />
     <Project Path="src/ExceptionKnowledgeBase.Worker/ExceptionKnowledgeBase.Worker.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ExceptionKnowledgeBase.Tests/ExceptionKnowledgeBase.Tests.csproj" />
+  </Folder>
 </Solution>

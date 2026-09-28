@@ -26,6 +26,12 @@ public sealed class AiAnalysis
     // Phase 4 (§75): coarse category for trend analytics.
     public string? RootCauseCategory { get; set; }
 
+    // Phase 3 (§74): semantic cluster shared by related fingerprints.
+    public string? ClusterId { get; set; }
+
+    // Phase 4 (§75): deterministic Loki/Kibana/Splunk/Grafana query hints.
+    public List<SuggestedLogQueryRecord> SuggestedLogQueries { get; set; } = new();
+
     public List<string> RecommendedChecks { get; set; } = new();
     public List<string> RecommendedSolutions { get; set; } = new();
 
@@ -60,4 +66,11 @@ public sealed class Evidence
     public string EntityId { get; set; } = string.Empty;
     public string? Title { get; set; }
     public double Similarity { get; set; }
+}
+
+public sealed class SuggestedLogQueryRecord
+{
+    public string Backend { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string Query { get; set; } = string.Empty;
 }
